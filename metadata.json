@@ -1,0 +1,7 @@
+{
+  "name": "TradePro Marketing",
+  "description": "Aplicación profesional para gestión de trade marketing, reportes de degustación, amarres y muestreo en punto de venta.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

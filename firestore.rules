@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: reports
+    // Fields:
+    //   - id: string
+    //   - type: string (degustacion, amarre, valor_agregado, muestreo)
+    //   - storeName: string
+    //   - productName: string
+    //   - quantity: number
+    //   - notes: string
+    //   - timestamp: number
+    //   - userId: string
+    //   - location: map { latitude: number, longitude: number }
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string
+    //   - email: string
+    //   - displayName: string
+    //   - role: string (admin, user)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['type', 'storeName', 'productName', 'timestamp', 'userId']) &&
+             data.type in ['degustacion', 'amarre', 'valor_agregado', 'muestreo'] &&
+             data.storeName is string && data.storeName.size() > 0 && data.storeName.size() < 100 &&
+             data.productName is string && data.productName.size() > 0 && data.productName.size() < 100 &&
+             data.timestamp is number &&
+             data.userId == request.auth.uid &&
+             (!('quantity' in data) || data.quantity is number) &&
+             (!('images' in data) || (data.images is list && data.images.size() <= 3)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() < 500));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid == request.auth.uid &&
+             data.email is string &&
+             (!('role' in data) || data.role == 'user'); // Non-admins can only set role to user
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+              (request.auth.token.email == "carlosraziel25@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data)) || isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidReport(request.resource.data);
+      allow update: if (isDocOwner() && isValidReport(request.resource.data)) || isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+  }
+}
